@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { trpc } from '@/utils/trpc';
+import type { Editor } from 'tldraw';
 
 // Import tldraw dynamically to avoid SSR issues
 const Tldraw = dynamic(
@@ -28,6 +29,7 @@ export default function Home() {
   const [menuImageId, setMenuImageId] = useState<number | null>(null);
   const [priceUpdates, setPriceUpdates] = useState<PriceUpdate[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
 
   const uploadImage = trpc.menu.uploadImage.useMutation({
     onError: () => {
@@ -69,6 +71,54 @@ export default function Home() {
         return;
       }
 
+      // Add the image to tldraw
+      if (editor) {
+        try {
+          // Create an image element to get dimensions
+          const img = new Image();
+          img.src = url;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+
+          // Calculate dimensions
+          const { width, height } = img;
+          const aspectRatio = width / height;
+          const maxWidth = 800;
+          const maxHeight = 600;
+          let w = width;
+          let h = height;
+
+          if (width > maxWidth) {
+            w = maxWidth;
+            h = w / aspectRatio;
+          }
+          if (h > maxHeight) {
+            h = maxHeight;
+            w = h * aspectRatio;
+          }
+
+          // Create the image shape directly
+          editor.createShape({
+            type: 'image',
+            x: 0,
+            y: 0,
+            props: {
+              url: url,
+              w: w,
+              h: h,
+            },
+          });
+
+          // Center the image in the viewport
+          editor.zoomToFit();
+        } catch (error) {
+          console.error('Error adding image to tldraw:', error);
+          setError('Failed to display image in editor');
+        }
+      }
+
       console.log('Attempting uploadImage mutation with URL:', url);
       try {
         console.log('Calling uploadImage.mutateAsync with:', { imageUrl: url });
@@ -85,7 +135,7 @@ export default function Home() {
       console.error('Error in handleImageUpload:', error);
       setError('Failed to upload image. Please try again.');
     }
-  }, [uploadImage]);
+  }, [uploadImage, editor]);
 
   const handleSaveChanges = useCallback(async () => {
     if (!menuImageId) return;
@@ -117,7 +167,9 @@ export default function Home() {
         <div className="flex gap-4">
           <div className="flex-1 h-[800px] bg-white rounded-lg shadow-lg overflow-hidden relative">
             <div className="absolute inset-0">
-              <Tldraw />
+              <Tldraw 
+                onMount={setEditor}
+              />
             </div>
           </div>
 
