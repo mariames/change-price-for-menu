@@ -3,14 +3,11 @@
 import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { trpc } from '@/utils/trpc';
-import type { Editor } from 'tldraw';
+import { Editor, Tldraw as TldrawComponent } from 'tldraw';
 
 // Import tldraw dynamically to avoid SSR issues
 const Tldraw = dynamic(
-  () => import('tldraw').then((mod) => {
-    const { Tldraw } = mod;
-    return Tldraw;
-  }),
+  () => import('tldraw').then((mod) => mod.Tldraw),
   { ssr: false }
 );
 
@@ -71,6 +68,11 @@ export default function Home() {
         return;
       }
 
+      // Fetch the image and create a File object
+      const imageResponse = await fetch(window.location.origin + url);
+      const imageBlob = await imageResponse.blob();
+      const imageFile = new File([imageBlob], file.name, { type: file.type });
+
       // Add the image to tldraw
       if (editor) {
         try {
@@ -99,16 +101,11 @@ export default function Home() {
             w = h * aspectRatio;
           }
 
-          // Create the image shape directly
-          editor.createShape({
-            type: 'image',
-            x: 0,
-            y: 0,
-            props: {
-              url: url,
-              w: w,
-              h: h,
-            },
+          // Insert the image using the editor's API
+          await editor.putExternalContent({
+            type: 'files',
+            files: [imageFile],
+            ignoreParent: false,
           });
 
           // Center the image in the viewport
