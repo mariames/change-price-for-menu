@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { trpc } from '@/utils/trpc';
-import { Editor, Tldraw as TldrawComponent } from 'tldraw';
+import { Editor, Tldraw as TldrawComponent, TLShape, TLShapeId } from 'tldraw';
 
 // Import tldraw dynamically to avoid SSR issues
 const Tldraw = dynamic(
@@ -12,9 +12,10 @@ const Tldraw = dynamic(
 );
 
 interface PriceUpdate {
+  id: TLShapeId;
   originalPrice: string;
   newPrice: string;
-  coordinates: {
+  bounds: {
     x: number;
     y: number;
     width: number;
@@ -134,21 +135,52 @@ export default function Home() {
     }
   }, [uploadImage, editor]);
 
-  const handleSaveChanges = useCallback(async () => {
-    if (!menuImageId) return;
+  const handleMount = useCallback((editor: Editor) => {
+    setEditor(editor);
 
-    try {
-      setError(null);
-      const result = await updatePrices.mutateAsync({
-        menuImageId,
-        priceUpdates,
-      });
-      console.log('Prices updated:', result);
-    } catch (error) {
-      console.error('Error updating prices:', error);
-      setError('Failed to update prices. Please try again.');
-    }
-  }, [menuImageId, priceUpdates, updatePrices]);
+    // Set up a store listener for shape changes
+    const unsubscribe = editor.store.listen(() => {
+      const allShapes = editor.getCurrentPageShapes();
+      
+      // Find the most recently created rectangle
+      const newShape = allShapes
+        .filter(shape => 
+          shape.type === 'geo' && 
+          shape.props && 
+          typeof shape.props === 'object' &&
+          'geo' in shape.props &&
+          shape.props.geo === 'rectangle'
+        )
+        .pop(); // Get the last rectangle created
+
+      // Only add if this shape isn't already in our price updates
+      if (newShape && !priceUpdates.some(update => update.id === newShape.id)) {
+        const newUpdate = {
+          id: newShape.id,
+          originalPrice: '',
+          newPrice: '',
+          bounds: {
+            x: newShape.x,
+            y: newShape.y,
+            width: newShape.props && typeof newShape.props === 'object' && 'size' in newShape.props ? 
+              (Array.isArray(newShape.props.size) ? newShape.props.size[0] : 100) : 100,
+            height: newShape.props && typeof newShape.props === 'object' && 'size' in newShape.props ? 
+              (Array.isArray(newShape.props.size) ? newShape.props.size[1] : 100) : 100,
+          }
+        };
+
+        // Replace all existing updates with just this one
+        setPriceUpdates([newUpdate]);
+
+        // Select the shape to make it clear which one we're working with
+        editor.select(newShape.id);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [priceUpdates]);
 
   return (
     <main className="min-h-screen p-4 bg-gray-50">
@@ -165,7 +197,7 @@ export default function Home() {
           <div className="flex-1 h-[800px] bg-white rounded-lg shadow-lg overflow-hidden relative">
             <div className="absolute inset-0">
               <Tldraw 
-                onMount={setEditor}
+                onMount={handleMount}
               />
             </div>
           </div>
@@ -185,19 +217,72 @@ export default function Home() {
             </div>
 
             <div className="p-4 bg-white rounded-lg shadow-lg">
-              <h2 className="text-lg font-semibold mb-4">Price Updates</h2>
-              <div className="space-y-2">
-                {priceUpdates.map((update, i) => (
-                  <div key={i} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                    <span className="font-mono">{update.originalPrice}</span>
-                    <span className="text-gray-500">→</span>
-                    <span className="font-mono">{update.newPrice}</span>
+              <h2 className="text-lg font-semibold mb-4">Price Update</h2>
+              <div className="space-y-4">
+                {priceUpdates.map((update) => (
+                  <div key={update.id.toString()} className="p-3 bg-gray-50 rounded-lg">
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        placeholder="Current Price"
+                        value={update.originalPrice}
+                        onChange={(e) => {
+                          setPriceUpdates(prev =>
+                            prev.map(u =>
+                              u.id === update.id
+                                ? { ...u, originalPrice: e.target.value }
+                                : u
+                            )
+                          );
+                        }}
+                        className="flex-1 p-2 border rounded"
+                      />
+                      <span className="flex items-center">→</span>
+                      <input
+                        type="text"
+                        placeholder="New Price"
+                        value={update.newPrice}
+                        onChange={(e) => {
+                          setPriceUpdates(prev =>
+                            prev.map(u =>
+                              u.id === update.id
+                                ? { ...u, newPrice: e.target.value }
+                                : u
+                            )
+                          );
+                        }}
+                        className="flex-1 p-2 border rounded"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        // Remove the price update and the corresponding shape
+                        setPriceUpdates([]);
+                        if (editor && update.id) {
+                          editor.deleteShape(update.id);
+                        }
+                      }}
+                      className="text-red-600 text-sm hover:text-red-800"
+                    >
+                      Remove
+                    </button>
                   </div>
                 ))}
               </div>
               {priceUpdates.length > 0 && (
                 <button
-                  onClick={handleSaveChanges}
+                  onClick={() => {
+                    if (menuImageId) {
+                      updatePrices.mutate({
+                        menuImageId,
+                        priceUpdates: priceUpdates.map(({ originalPrice, newPrice, bounds }) => ({
+                          originalPrice,
+                          newPrice,
+                          coordinates: bounds
+                        }))
+                      });
+                    }
+                  }}
                   className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition-colors"
                 >
                   Save Changes
