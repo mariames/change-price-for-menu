@@ -70,6 +70,10 @@ MenuByAI is a web application that uses AI to automatically detect and extract p
 - **Drawing**: tldraw
 - **OCR**: Tesseract.js
 - **Styling**: Tailwind CSS
+- **Database**: PostgreSQL with Drizzle ORM
+  - Type-safe SQL query builder
+  - Automatic migration management
+  - Schema declaration using TypeScript
 
 ## Setup
 
@@ -84,12 +88,36 @@ cd menu-price-ai
 npm install
 ```
 
-3. Run the development server:
+3. Set up the database:
+```bash
+# Create a .env file with your database URL
+echo "DATABASE_URL=postgresql://user:password@host:port/database" > .env
+
+# Generate and run migrations
+npm run db:generate
+npm run db:push
+```
+
+4. Run the development server:
 ```bash
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+### Database Schema and Migrations
+
+The project uses Drizzle ORM for database management. The schema is defined in `src/server/db/schema.ts`. To make database changes:
+
+1. Modify the schema file
+2. Generate migrations:
+```bash
+npm run db:generate
+```
+3. Apply migrations:
+```bash
+npm run db:push
+```
 
 ## Current Status
 
