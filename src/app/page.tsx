@@ -35,9 +35,40 @@ export default function Home() {
     },
   });
 
-  const updatePrices = trpc.menu.updatePrices.useMutation({
+  const updatePricesMutation = trpc.menu.updatePrices.useMutation({
+    onSuccess: () => {
+      if (editor && priceUpdates.length > 0) {
+        const update = priceUpdates[0];
+        
+        // Update the rectangle to show success state - only change color
+        editor.updateShape({
+          id: update.id,
+          type: 'geo',
+          props: {
+            fill: 'solid',
+            color: 'green',
+            geo: 'rectangle'
+          }
+        });
+
+        // Clear the price updates
+        setPriceUpdates([]);
+      }
+    },
     onError: () => {
       setError('Failed to update prices. Please try again.');
+      
+      if (editor && priceUpdates.length > 0) {
+        editor.updateShape({
+          id: priceUpdates[0].id,
+          type: 'geo',
+          props: {
+            fill: 'solid',
+            color: 'red',
+            geo: 'rectangle'
+          }
+        });
+      }
     },
   });
 
@@ -69,38 +100,13 @@ export default function Home() {
         return;
       }
 
-      // Fetch the image and create a File object
-      const imageResponse = await fetch(window.location.origin + url);
-      const imageBlob = await imageResponse.blob();
-      const imageFile = new File([imageBlob], file.name, { type: file.type });
-
       // Add the image to tldraw
       if (editor) {
         try {
-          // Create an image element to get dimensions
-          const img = new Image();
-          img.src = url;
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-          });
-
-          // Calculate dimensions
-          const { width, height } = img;
-          const aspectRatio = width / height;
-          const maxWidth = 800;
-          const maxHeight = 600;
-          let w = width;
-          let h = height;
-
-          if (width > maxWidth) {
-            w = maxWidth;
-            h = w / aspectRatio;
-          }
-          if (h > maxHeight) {
-            h = maxHeight;
-            w = h * aspectRatio;
-          }
+          // Fetch the image and create a File object
+          const imageResponse = await fetch(window.location.origin + url);
+          const imageBlob = await imageResponse.blob();
+          const imageFile = new File([imageBlob], file.name, { type: file.type });
 
           // Insert the image using the editor's API
           await editor.putExternalContent({
@@ -182,6 +188,25 @@ export default function Home() {
     };
   }, [priceUpdates]);
 
+  const handleSaveChanges = useCallback(() => {
+    if (!menuImageId || !priceUpdates.length) return;
+
+    const update = priceUpdates[0];
+    if (!update.originalPrice || !update.newPrice) {
+      setError('Please enter both current and new prices.');
+      return;
+    }
+
+    updatePricesMutation.mutate({
+      menuImageId,
+      priceUpdates: priceUpdates.map(({ originalPrice, newPrice, bounds }) => ({
+        originalPrice,
+        newPrice,
+        coordinates: bounds
+      }))
+    });
+  }, [menuImageId, priceUpdates, updatePricesMutation]);
+
   return (
     <main className="min-h-screen p-4 bg-gray-50">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -236,6 +261,7 @@ export default function Home() {
                           );
                         }}
                         className="flex-1 p-2 border rounded"
+                        required
                       />
                       <span className="flex items-center">→</span>
                       <input
@@ -252,6 +278,7 @@ export default function Home() {
                           );
                         }}
                         className="flex-1 p-2 border rounded"
+                        required
                       />
                     </div>
                     <button
@@ -271,19 +298,13 @@ export default function Home() {
               </div>
               {priceUpdates.length > 0 && (
                 <button
-                  onClick={() => {
-                    if (menuImageId) {
-                      updatePrices.mutate({
-                        menuImageId,
-                        priceUpdates: priceUpdates.map(({ originalPrice, newPrice, bounds }) => ({
-                          originalPrice,
-                          newPrice,
-                          coordinates: bounds
-                        }))
-                      });
-                    }
-                  }}
-                  className="mt-4 w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600 transition-colors"
+                  onClick={handleSaveChanges}
+                  disabled={!priceUpdates[0]?.originalPrice || !priceUpdates[0]?.newPrice}
+                  className={`mt-4 w-full py-2 px-4 rounded transition-colors ${
+                    !priceUpdates[0]?.originalPrice || !priceUpdates[0]?.newPrice
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
                 >
                   Save Changes
                 </button>
